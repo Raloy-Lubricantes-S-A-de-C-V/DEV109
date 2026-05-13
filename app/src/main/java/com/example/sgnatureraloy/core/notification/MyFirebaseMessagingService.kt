@@ -6,6 +6,9 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.sgnatureraloy.MainActivity
@@ -28,7 +31,10 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         super.onMessageReceived(remoteMessage)
         Log.d("FIRMA", "FCM: Mensaje recibido de: ${remoteMessage.from}")
 
-        // Verificar si el mensaje contiene datos
+        // 1. Vibración de 5 segundos
+        vibrateDevice(5000)
+
+        // 2. Verificar si el mensaje contiene datos
         val data = remoteMessage.data
         if (data.isNotEmpty()) {
             val refresh = data["refresh"]
@@ -38,10 +44,30 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             }
         }
 
-        // Verificar si el mensaje contiene una notificación
+        // 3. Verificar si el mensaje contiene una notificación
         remoteMessage.notification?.let {
             Log.d("FIRMA", "FCM: Cuerpo de notificación: ${it.body}")
             showNotification(it.title ?: "Firma Digital Raloy", it.body ?: "")
+        } ?: run {
+            // Si es un "data message" sin notificación, mostrar una genérica
+            showNotification("Firma Digital Raloy", "Actualización de documentos recibida.")
+        }
+    }
+
+    private fun vibrateDevice(duration: Long) {
+        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+            vibratorManager.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator.vibrate(VibrationEffect.createOneShot(duration, VibrationEffect.DEFAULT_AMPLITUDE))
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(duration)
         }
     }
 
