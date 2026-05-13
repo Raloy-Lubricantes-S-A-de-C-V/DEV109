@@ -1,5 +1,7 @@
 package com.example.sgnatureraloy.ui.signature
 
+import android.util.Log
+import android.widget.Toast
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -15,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -29,6 +32,7 @@ fun SignatureListScreen(
     onSignatureClick: (SignatureProcess) -> Unit,
     onLogout: () -> Unit
 ) {
+    val context = LocalContext.current
     val signatures by viewModel.filteredSignatures.collectAsState()
     val selectedFilter by viewModel.selectedFilter.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -88,6 +92,8 @@ fun SignatureListScreen(
                         DropdownMenuItem(
                             text = { Text("Cerrar Sesión") },
                             onClick = {
+                                Log.d("FIRMA", "SignatureListScreen: Click en Cerrar Sesión")
+                                Toast.makeText(context, "Cerrando sesión...", Toast.LENGTH_SHORT).show()
                                 showMenu = false
                                 onLogout()
                             }

@@ -60,6 +60,10 @@ class LoginViewModel(
     fun resetOtpState() {
         _otpState.value = null
     }
+
+    fun resetLoginState() {
+        _loginState.value = LoginUiState.Idle
+    }
 }
 
 sealed class LoginUiState {

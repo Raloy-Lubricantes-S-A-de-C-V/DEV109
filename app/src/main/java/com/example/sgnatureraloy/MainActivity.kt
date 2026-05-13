@@ -51,8 +51,9 @@ fun MainNavigation() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val sessionManager = remember { SessionManager(context) }
     
-    // DETERMINAR DESTINO INICIAL SEGÚN SESIÓN
-    val startDestination = if (sessionManager.isLoggedIn()) "signature_list" else "login"
+    // Usamos un estado para el destino inicial que sea reactivo
+    val isLoggedIn = sessionManager.isLoggedIn()
+    val startDestination = if (isLoggedIn) "signature_list" else "login"
 
     val apiService = RetrofitClient.getApiService(context)
     val authRepository = AuthRepository(apiService)
@@ -64,10 +65,14 @@ fun MainNavigation() {
     NavHost(navController = navController, startDestination = startDestination) {
         composable("login") {
             Log.d("FIRMA", "NavHost: MOSTRANDO LOGIN (ESTÁTICO)")
+            // Mostrar el token FCM en logs para depuración
+            Log.d("FIRMA", "FCM Token actual: ${sessionManager.getFcmToken()}")
+
             LoginScreen(
                 viewModel = loginViewModel,
                 onLoginSuccess = {
                     Log.d("FIRMA", "NavHost: LOGIN EXITOSO -> PASANDO A HOME")
+                    loginViewModel.resetLoginState()
                     navController.navigate("signature_list") {
                         popUpTo("login") { inclusive = true }
                     }
@@ -82,9 +87,10 @@ fun MainNavigation() {
                     navController.navigate("signature_detail/${signature.referenceId}")
                 },
                 onLogout = {
+                    Log.d("FIRMA", "MainNavigation: Ejecutando logout...")
                     sessionManager.clearSession()
                     navController.navigate("login") {
-                        popUpTo("signature_list") { inclusive = true }
+                        popUpTo(0) { inclusive = true }
                     }
                 }
             )
