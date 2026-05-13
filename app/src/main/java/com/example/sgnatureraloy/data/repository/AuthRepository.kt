@@ -7,7 +7,7 @@ import retrofit2.Response
 
 class AuthRepository(private val apiService: ApiService) {
 
-    suspend fun login(user: String, pass: String): Response<AuthResponse> {
-        return apiService.authenticate(AuthRequest(user, pass))
+    suspend fun login(user: String, pass: String, fcmToken: String? = null): Response<AuthResponse> {
+        return apiService.authenticate(AuthRequest(user, pass, fcmToken))
     }
 }

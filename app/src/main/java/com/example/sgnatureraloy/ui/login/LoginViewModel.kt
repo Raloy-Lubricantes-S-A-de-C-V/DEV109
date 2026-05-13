@@ -26,7 +26,8 @@ class LoginViewModel(
         viewModelScope.launch {
             _loginState.value = LoginUiState.Loading
             try {
-                val response = repository.login(user, pass)
+                val fcmToken = sessionManager.getFcmToken()
+                val response = repository.login(user, pass, fcmToken)
                 val body = response.body()
                 Log.d("FIRMA", "LoginViewModel: Respuesta recibida. Status: ${response.code()}")
                 if (response.isSuccessful && body?.authData?.error == false) {
