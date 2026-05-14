@@ -5,6 +5,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -12,13 +14,11 @@ import android.os.VibratorManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.sgnatureraloy.MainActivity
-import com.example.sgnatureraloy.R
 import com.example.sgnatureraloy.core.events.RefreshEventBus
 import com.example.sgnatureraloy.core.network.ApiService
 import com.example.sgnatureraloy.core.session.SessionManager
 import com.example.sgnatureraloy.data.model.EmailRequest
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.MutableStateFlow
 
 class SignaturePollingManager(
     private val context: Context,
@@ -29,20 +29,35 @@ class SignaturePollingManager(
     private var pollingJob: Job? = null
     
     companion object {
-        private const val POLL_INTERVAL_MS = 60000L // 1 minuto
+        private const val BASE_POLL_INTERVAL_MS = 60000L // 1 minuto base
+        private const val MAX_RETRY_INTERVAL_MS = 300000L // Máximo 5 minutos en caso de error persistente
         private const val CHANNEL_ID = "signatures_polling_notifications"
         private const val CHANNEL_NAME = "Notificaciones de Firma"
+    }
+
+    private fun isNetworkAvailable(): Boolean {
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
     fun startPolling() {
         if (pollingJob?.isActive == true) return
         
-        Log.d("FIRMA", "--- [CRONÓMETRO INICIADO] ---")
-        Log.d("FIRMA", "PollingManager: Ciclo de escucha activa cada 60s.")
+        Log.d("FIRMA", "--- [SISTEMA RESILIENTE INICIADO] ---")
         
         pollingJob = scope.launch {
+            var currentInterval = BASE_POLL_INTERVAL_MS
             var cycleCount = 1
+
             while (isActive) {
+                if (!isNetworkAvailable()) {
+                    Log.w("FIRMA", "⚠️ [MODO AHORRO] Sin internet. Esperando conexión...")
+                    delay(BASE_POLL_INTERVAL_MS)
+                    continue
+                }
+
                 val email = sessionManager.getUserEmail()
                 if (email != null && email.isNotEmpty() && email != "null") {
                     try {
@@ -53,25 +68,29 @@ class SignaturePollingManager(
                         val duration = System.currentTimeMillis() - startTime
                         
                         if (response.isSuccessful) {
+                            // Resetear intervalo si la conexión fue exitosa
+                            currentInterval = BASE_POLL_INTERVAL_MS
                             val body = response.body()
-                            Log.d("FIRMA", "<<<< [RESPUESTA] DEV108 respondió en ${duration}ms. Novedades: ${body?.hasNewSignature}")
+                            Log.d("FIRMA", "<<<< [EXITO] DEV108 respondió en ${duration}ms. Novedades: ${body?.hasNewSignature}")
                             
                             if (body?.hasNewSignature == true) {
-                                Log.d("FIRMA", "🚨 [ALERTA] ¡Nueva firma detectada en DB! Disparando protocolo de urgencia.")
+                                Log.d("FIRMA", "🚨 [ALERTA] ¡Acción requerida! Disparando protocolo de urgencia.")
                                 triggerAlert()
                                 RefreshEventBus.triggerRefresh()
                             }
                         } else {
-                            Log.e("FIRMA", "⚠️ [ERROR HTTP] Código: ${response.code()} - Posible endpoint no listo en DEV108.")
+                            Log.e("FIRMA", "⚠️ [ERROR SERVIDOR] Código: ${response.code()}. Reintentando en ciclo normal.")
                         }
                     } catch (e: Exception) {
-                        Log.e("FIRMA", "❌ [ERROR RED] No se pudo contactar al servidor: ${e.message}")
+                        Log.e("FIRMA", "❌ [FALLA DE RED] ${e.message}. Aplicando reintento exponencial.")
+                        // Aumentar intervalo si hay fallas persistentes (evitar drenar batería)
+                        currentInterval = (currentInterval * 1.5).toLong().coerceAtMost(MAX_RETRY_INTERVAL_MS)
                     }
                 }
                 
                 cycleCount++
-                Log.d("FIRMA", "⏳ [ESPERA] Siguiente consulta en 60 segundos...")
-                delay(POLL_INTERVAL_MS)
+                Log.d("FIRMA", "⏳ [PRÓXIMA CONSULTA] En ${currentInterval / 1000}s")
+                delay(currentInterval)
             }
         }
     }
