@@ -37,26 +37,40 @@ class SignaturePollingManager(
     fun startPolling() {
         if (pollingJob?.isActive == true) return
         
-        Log.d("FIRMA", "PollingManager: Iniciando polling cada 1 min")
+        Log.d("FIRMA", "--- [CRONÓMETRO INICIADO] ---")
+        Log.d("FIRMA", "PollingManager: Ciclo de escucha activa cada 60s.")
+        
         pollingJob = scope.launch {
+            var cycleCount = 1
             while (isActive) {
                 val email = sessionManager.getUserEmail()
                 if (email != null && email.isNotEmpty() && email != "null") {
                     try {
-                        Log.d("FIRMA", "PollingManager: Consultando notificaciones para $email")
+                        val startTime = System.currentTimeMillis()
+                        Log.d("FIRMA", ">>>> [CICLO #$cycleCount] Consultando a DEV108 para: $email")
+                        
                         val response = apiService.checkNotifications(EmailRequest(email))
+                        val duration = System.currentTimeMillis() - startTime
+                        
                         if (response.isSuccessful) {
                             val body = response.body()
+                            Log.d("FIRMA", "<<<< [RESPUESTA] DEV108 respondió en ${duration}ms. Novedades: ${body?.hasNewSignature}")
+                            
                             if (body?.hasNewSignature == true) {
-                                Log.d("FIRMA", "PollingManager: ¡Nueva firma detectada!")
+                                Log.d("FIRMA", "🚨 [ALERTA] ¡Nueva firma detectada en DB! Disparando protocolo de urgencia.")
                                 triggerAlert()
                                 RefreshEventBus.triggerRefresh()
                             }
+                        } else {
+                            Log.e("FIRMA", "⚠️ [ERROR HTTP] Código: ${response.code()} - Posible endpoint no listo en DEV108.")
                         }
                     } catch (e: Exception) {
-                        Log.e("FIRMA", "PollingManager: Error en polling: ${e.message}")
+                        Log.e("FIRMA", "❌ [ERROR RED] No se pudo contactar al servidor: ${e.message}")
                     }
                 }
+                
+                cycleCount++
+                Log.d("FIRMA", "⏳ [ESPERA] Siguiente consulta en 60 segundos...")
                 delay(POLL_INTERVAL_MS)
             }
         }
