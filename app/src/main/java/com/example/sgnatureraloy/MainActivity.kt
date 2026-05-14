@@ -7,10 +7,7 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -18,6 +15,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.sgnatureraloy.core.network.RetrofitClient
+import com.example.sgnatureraloy.core.notification.SignaturePollingManager
 import com.example.sgnatureraloy.core.session.SessionManager
 import com.example.sgnatureraloy.data.repository.AuthRepository
 import com.example.sgnatureraloy.data.repository.SignatureRepository
@@ -51,11 +49,23 @@ fun MainNavigation() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val sessionManager = remember { SessionManager(context) }
     
-    // Usamos un estado para el destino inicial que sea reactivo
-    val isLoggedIn = sessionManager.isLoggedIn()
-    val startDestination = if (isLoggedIn) "signature_list" else "login"
-
     val apiService = RetrofitClient.getApiService(context)
+    val pollingManager = remember { SignaturePollingManager(context, apiService, sessionManager) }
+
+    // Usamos un estado para el destino inicial que sea reactivo
+    var loggedInState by remember { mutableStateOf(sessionManager.isLoggedIn()) }
+    val startDestination = if (loggedInState) "signature_list" else "login"
+
+    // Gestionar el ciclo de vida del polling
+    DisposableEffect(loggedInState) {
+        if (loggedInState) {
+            pollingManager.startPolling()
+        }
+        onDispose {
+            pollingManager.stopPolling()
+        }
+    }
+
     val authRepository = AuthRepository(apiService)
     val signatureRepository = SignatureRepository(apiService)
     
@@ -73,6 +83,7 @@ fun MainNavigation() {
                 onLoginSuccess = {
                     Log.d("FIRMA", "NavHost: LOGIN EXITOSO -> PASANDO A HOME")
                     loginViewModel.resetLoginState()
+                    loggedInState = true
                     navController.navigate("signature_list") {
                         popUpTo("login") { inclusive = true }
                     }
@@ -89,6 +100,7 @@ fun MainNavigation() {
                 onLogout = {
                     Log.d("FIRMA", "MainNavigation: Ejecutando logout...")
                     sessionManager.clearSession()
+                    loggedInState = false
                     navController.navigate("login") {
                         popUpTo(0) { inclusive = true }
                     }

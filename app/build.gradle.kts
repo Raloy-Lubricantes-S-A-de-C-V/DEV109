@@ -1,7 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
-    id("com.google.gms.google-services")
 }
 
 android {
@@ -64,10 +63,6 @@ dependencies {
 
     // Security
     implementation(libs.androidx.security.crypto)
-
-    // Firebase
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.messaging)
 
     // Utilities
     implementation(libs.gson)
