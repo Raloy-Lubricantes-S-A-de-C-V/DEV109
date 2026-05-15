@@ -1,13 +1,26 @@
 package com.example.sgnatureraloy
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.runtime.*
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -32,7 +45,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.d("FIRMA", "MainActivity: onCreate")
-        
+
         enableEdgeToEdge()
 
         setContent {
@@ -48,19 +61,37 @@ fun MainNavigation() {
     val navController = rememberNavController()
     val context = androidx.compose.ui.platform.LocalContext.current
     val sessionManager = remember { SessionManager(context) }
-    
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        Log.d("FIRMA", "Permiso POST_NOTIFICATIONS concedido: $isGranted")
+    }
+
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val permissionStatus = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            )
+
+            if (permissionStatus != PackageManager.PERMISSION_GRANTED) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
     val apiService = RetrofitClient.getApiService(context)
     val pollingManager = remember { SignaturePollingManager(context, apiService, sessionManager) }
 
-    // Usamos un estado para el destino inicial que sea reactivo
     var loggedInState by remember { mutableStateOf(sessionManager.isLoggedIn()) }
     val startDestination = if (loggedInState) "signature_list" else "login"
 
-    // Gestionar el ciclo de vida del polling
     DisposableEffect(loggedInState) {
         if (loggedInState) {
             pollingManager.startPolling()
         }
+
         onDispose {
             pollingManager.stopPolling()
         }
@@ -68,14 +99,17 @@ fun MainNavigation() {
 
     val authRepository = AuthRepository(apiService)
     val signatureRepository = SignatureRepository(apiService)
-    
-    val loginViewModel: LoginViewModel = viewModel(factory = LoginViewModelFactory(authRepository, sessionManager))
-    val signatureViewModel: SignatureViewModel = viewModel(factory = SignatureViewModelFactory(signatureRepository))
+
+    val loginViewModel: LoginViewModel = viewModel(
+        factory = LoginViewModelFactory(authRepository, sessionManager)
+    )
+    val signatureViewModel: SignatureViewModel = viewModel(
+        factory = SignatureViewModelFactory(signatureRepository)
+    )
 
     NavHost(navController = navController, startDestination = startDestination) {
         composable("login") {
-            Log.d("FIRMA", "NavHost: MOSTRANDO LOGIN (ESTÁTICO)")
-            // Mostrar el token FCM en logs para depuración
+            Log.d("FIRMA", "NavHost: MOSTRANDO LOGIN")
             Log.d("FIRMA", "FCM Token actual: ${sessionManager.getFcmToken()}")
 
             LoginScreen(
@@ -90,6 +124,7 @@ fun MainNavigation() {
                 }
             )
         }
+
         composable("signature_list") {
             SignatureListScreen(
                 viewModel = signatureViewModel,
@@ -98,7 +133,7 @@ fun MainNavigation() {
                     navController.navigate("signature_detail/${signature.referenceId}")
                 },
                 onLogout = {
-                    Log.d("FIRMA", "MainNavigation: Ejecutando logout...")
+                    Log.d("FIRMA", "MainNavigation: Ejecutando logout")
                     sessionManager.clearSession()
                     loggedInState = false
                     navController.navigate("login") {
@@ -107,14 +142,15 @@ fun MainNavigation() {
                 }
             )
         }
+
         composable(
-            "signature_detail/{referenceId}",
+            route = "signature_detail/{referenceId}",
             arguments = listOf(navArgument("referenceId") { type = NavType.StringType })
         ) { backStackEntry ->
             val referenceId = backStackEntry.arguments?.getString("referenceId")
             val signatures by signatureViewModel.signatures.collectAsState()
             val signature = signatures.find { it.referenceId == referenceId }
-            
+
             signature?.let {
                 SignatureDetailScreen(
                     signature = it,
